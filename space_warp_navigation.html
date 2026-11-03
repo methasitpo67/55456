@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Space Warp Navigation - วาร์ปพิกัดอวกาศบนเส้นจำนวน</title>
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel Standalone for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Prompt:wght@300;400;500;600;700&display=swap');
+
+        body {
+            font-family: 'Prompt', sans-serif;
+            background-color: #030712;
+            color: #f3f4f6;
+            overflow-x: hidden;
+        }
+
+        .font-space {
+            font-family: 'Orbitron', sans-serif;
+        }
+
+        /* Clean Deep Space Background */
+        .stars-bg {
+            background: radial-gradient(circle at 50% 0%, #111827 0%, #030712 100%);
+        }
+
+        /* Subtle Clean Glassmorphism */
+        .glass-panel {
+            background: rgba(17, 24, 39, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .glass-card {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        /* Pulsing Space Station */
+        @keyframes stationPulse {
+            0%, 100% { transform: translateY(0) scale(1); filter: drop-shadow(0 0 6px #f59e0b); }
+            50% { transform: translateY(-3px) scale(1.08); filter: drop-shadow(0 0 14px #fbbf24); }
+        }
+        .animate-station {
+            animation: stationPulse 3s infinite ease-in-out;
+        }
+
+        /* Smooth Fade In */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.4s ease-out forwards;
+        }
+    </style>
+</head>
+<body class="stars-bg min-h-screen">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // ฟังก์ชันหา ห.ร.ม. (Greatest Common Divisor) เพื่อทำเศษส่วนอย่างต่ำ
+        const getGCD = (a, b) => {
+            return b === 0 ? a : getGCD(b, a % b);
+        };
+
+        // ภารกิจขยายให้ครอบคลุม: เศษส่วนอย่างต่ำ และ จำนวนคละ
+        const MISSIONS = [
+            {
+                id: 1,
+                name: "Sector 1: Alpha Centauri (พื้นฐาน)",
+                shipA: { num: 1, den: 2, label: "ยาน Alpha", color: "#06b6d4" },
+                shipB: { num: 1, den: 3, label: "ยาน Beta", color: "#a855f7" },
+                lcm: 6,
+                desc: "ผลรวมไม่เกิน 1 ปีแสง"
+            },
+            {
+                id: 2,
+                name: "Sector 2: Orion Nebula (เศษส่วนอย่างต่ำ)",
+                shipA: { num: 1, den: 4, label: "ยาน Alpha", color: "#38bdf8" },
+                shipB: { num: 5, den: 12, label: "ยาน Beta", color: "#f43f5e" },
+                lcm: 12,
+                desc: "ผลรวมสามารถตัดทอนเป็นเศษส่วนอย่างต่ำได้"
+            },
+            {
+                id: 3,
+                name: "Sector 3: Andromeda (จำนวนคละ)",
+                shipA: { num: 3, den: 4, label: "ยาน Alpha", color: "#10b981" },
+                shipB: { num: 1, den: 2, label: "ยาน Beta", color: "#f59e0b" },
+                lcm: 4,
+                desc: "เดินทางไกลกว่า 1 ปีแสง (ผลลัพธ์เป็นจำนวนคละ)"
+            },
+            {
+                id: 4,
+                name: "Sector 4: Quantum Core (จัดเต็ม!)",
+                shipA: { num: 5, den: 6, label: "ยาน Alpha", color: "#ec4899" },
+                shipB: { num: 1, den: 2, label: "ยาน Beta", color: "#3b82f6" },
+                lcm: 6,
+                desc: "เกิน 1 ปีแสง และต้องทำเศษส่วนอย่างต่ำ"
+            }
+        ];
+
+        const App = () => {
+            const [currentMissionIdx, setCurrentMissionIdx] = useState(0);
+            const mission = MISSIONS[currentMissionIdx];
+
+            // Subgrid / Radar Resolution Multipliers
+            const [multA, setMultA] = useState(1);
+            const [multB, setMultB] = useState(1);
+
+            // Misconception Diagnostic Tool
+            const [estNum, setEstNum] = useState("");
+            const [estDen, setEstDen] = useState("");
+            const [diagLog, setDiagLog] = useState(null);
+
+            // Gameplay State: 'NAVIGATION' | 'RADAR_LOCKED' | 'WARP_COMPLETE'
+            const [gameState, setGameState] = useState('NAVIGATION');
+            const [showSimplify, setShowSimplify] = useState(false);
+
+            // เพิ่ม State สำหรับคู่มือ & ใบงานภารกิจ และสถานะด่านที่ผ่าน
+            const [isGuideOpen, setIsGuideOpen] = useState(false);
+            const [guideTab, setGuideTab] = useState('guide'); // 'guide' | 'missions' | 'worksheet'
+            const [completedSectors, setCompletedSectors] = useState([]);
+
+            // State สำหรับฟอร์มใบงานในเกม (Space Logbook)
+            const [wsLcmAns, setWsLcmAns] = useState("");
+            const [wsReasonAns, setWsReasonAns] = useState("");
+            const [wsFeedback, setWsFeedback] = useState(null);
+
+            // คำนวณค่าเศษส่วนปัจจุบันจากการคูณเรดาร์
+            const currNumA = mission.shipA.num * multA;
+            const currDenA = mission.shipA.den * multA;
+            const currNumB = mission.shipB.num * multB;
+            const currDenB = mission.shipB.den * multB;
+
+            const isMatched = currDenA === currDenB;
+            
+            // หาว่าต้องใช้เส้นจำนวนยาวแค่ไหน (1 หรือ 2 ปีแสง)
+            const targetVal = (mission.shipA.num / mission.shipA.den) + (mission.shipB.num / mission.shipB.den);
+            const maxLY = targetVal > 1 ? 2 : 1;
+
+            useEffect(() => {
+                if (window.lucide) {
+                    window.lucide.createIcons();
+                }
+            }, [gameState, isMatched, diagLog, currentMissionIdx, showSimplify, isGuideOpen, guideTab, wsFeedback]);
+
+            useEffect(() => {
+                if (isMatched && gameState === 'NAVIGATION') {
+                    setGameState('RADAR_LOCKED');
+                } else if (!isMatched && gameState === 'RADAR_LOCKED') {
+                    setGameState('NAVIGATION');
+                }
+            }, [isMatched, multA, multB]);
+
+            // ระบบดักทางความเข้าใจผิด
+            const runDiagnostic = () => {
+                const n = parseInt(estNum);
+                const d = parseInt(estDen);
+                if (isNaN(n) || isNaN(d) || d === 0) return;
+
+                const isClassicMistake = (n === mission.shipA.num + mission.shipB.num) && 
+                                         (d === mission.shipA.den + mission.shipB.den);
+                
+                const guessVal = n / d;
+
+                if (isClassicMistake) {
+                    setDiagLog({
+                        type: 'DANGER',
+                        title: '⚠️ อันตราย! อุกกาบาตขวางทาง',
+                        message: `กัปตันครับ! การบวกเศษส่วน เรานำตัวส่วน (ด้านล่าง) มาบวกกันไม่ได้นะครับ! ถ้าทำแบบนั้นระยะวาร์ปที่ได้จะสั้นลงจนยานตกสำรวจ (ลองดูระยะที่เรามีสิ มันควรจะยาวขึ้นเมื่อต่อกัน!)`,
+                    });
+                } else if (Math.abs(guessVal - targetVal) < 0.001) {
+                    setDiagLog({
+                        type: 'SUCCESS',
+                        title: '✨ คำนวณถูกต้อง! ล็อกเป้าหมายแล้ว',
+                        message: `เยี่ยมมากครับ! ตอนนี้ให้กัปตันลงไปจูน "สเกลเรดาร์" ด้านล่าง ให้มีขีดเท่ากัน (ส่วนเท่ากัน) ก่อน จึงจะสั่งเดินเครื่องวาร์ปได้`,
+                    });
+                } else {
+                    setDiagLog({
+                        type: 'WARNING',
+                        title: '📡 สัญญาณขาดหาย',
+                        message: 'พิกัดยังไม่ตรงเป้า ลองจูนสเกลเรดาร์ให้เท่ากันทั้งสองยานเพื่อหาคำตอบที่แท้จริงดูก่อนไหมครับ?',
+                    });
+                }
+            };
+
+            const initiateWarp = () => {
+                setGameState('WARP_COMPLETE');
+                setShowSimplify(false);
+                if (!completedSectors.includes(mission.id)) {
+                    setCompletedSectors(prev => [...prev, mission.id]);
+                }
+            };
+
+            const nextMission = () => {
+                setMultA(1);
+                setMultB(1);
+                setGameState('NAVIGATION');
+                setEstNum("");
+                setEstDen("");
+                setDiagLog(null);
+                setShowSimplify(false);
+                setCurrentMissionIdx((prev) => (prev + 1) % MISSIONS.length);
+            };
+
+            // ตรวจใบงานในเกม
+            const checkWorksheet = () => {
+                if (wsLcmAns.trim() === "6" && wsReasonAns.trim().length > 3) {
+                    setWsFeedback({ type: 'success', msg: '🎉 ถูกต้องเยี่ยมมาก! คุณเข้าใจหลักการหาตัวส่วนร่วมอย่างแท้จริงแล้ว' });
+                } else if (wsLcmAns.trim() === "6") {
+                    setWsFeedback({ type: 'warning', msg: 'ตอบ ค.ร.น. ถูกแล้ว! อย่าลืมเขียนเหตุผลประกอบอีกนิดหน่อยนะครับ' });
+                } else {
+                    setWsFeedback({ type: 'error', msg: 'คำตอบ ค.ร.น. ยังไม่ถูกต้อง ลองเช็ค Sector 1 (1/2 + 1/3) ดูนะว่าส่วนเท่ากันที่เลขอะไร!' });
+                }
+            };
+
+            // คณิตศาสตร์สำหรับการวิเคราะห์ (เศษส่วนอย่างต่ำ & จำนวนคละ)
+            const sumNum = currNumA + currNumB;
+            const sumDen = currDenA;
+            const commonDivisor = getGCD(sumNum, sumDen);
+            const isSimplifiable = commonDivisor > 1;
+            const simpNum = sumNum / commonDivisor;
+            const simpDen = sumDen / commonDivisor;
+            const isImproper = simpNum >= simpDen;
+            const wholeNum = Math.floor(simpNum / simpDen);
+            const remNum = simpNum % simpDen;
+            const needsOptimization = isSimplifiable || isImproper;
+
+            return (
+                <div className="max-w-5xl mx-auto px-4 py-8 sm:px-6">
+                    
+                    {/* Header แบบสะอาดตา + ปุ่มเปิดคู่มือ & ใบงาน */}
+                    <div className="flex flex-col sm:flex-row justify-between items-center glass-panel px-6 py-5 rounded-2xl mb-8 shadow-sm border border-slate-700">
+                        <div className="flex items-center gap-4 mb-4 sm:mb-0">
+                            <div className="w-12 h-12 bg-cyan-500/10 border border-cyan-500/30 rounded-xl flex items-center justify-center font-space text-2xl text-cyan-400">
+                                🚀
+                            </div>
+                            <div>
+                                <h1 className="font-space text-lg sm:text-2xl font-bold tracking-wide text-slate-100">
+                                    SPACE WARP <span className="text-cyan-400">NAVIGATOR</span>
+                                </h1>
+                                <p className="text-sm text-slate-400 font-mono mt-1">{mission.name}</p>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={() => setIsGuideOpen(true)}
+                                className="bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 font-space text-sm px-4 py-2.5 rounded-xl border border-cyan-500/40 transition flex items-center gap-2 shadow-sm active:scale-95"
+                            >
+                                <i data-lucide="book-open" className="w-4 h-4"></i>
+                                คู่มือ & ใบงานภารกิจ
+                            </button>
+
+                            <span className="font-space text-sm bg-slate-800/80 text-amber-300 px-4 py-2.5 rounded-xl border border-slate-700 shadow-sm hidden sm:inline-block">
+                                {mission.desc}
+                            </span>
+                        </div>
+                    </div>
+
+                    {/* Modal คู่มือการเล่น & ใบงานภารกิจ */}
+                    {isGuideOpen && (
+                        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+                            <div className="glass-panel w-full max-w-3xl rounded-3xl border border-slate-700 max-h-[90vh] flex flex-col shadow-2xl animate-fade-in">
+                                
+                                {/* Modal Header */}
+                                <div className="flex items-center justify-between p-6 border-b border-slate-800">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2.5 bg-amber-500/10 text-amber-400 rounded-xl border border-amber-500/20">
+                                            <i data-lucide="compass" className="w-6 h-6"></i>
+                                        </div>
+                                        <div>
+                                            <h2 className="font-space text-xl font-bold text-white">ศูนย์ข้อมูลภารกิจ & คู่มือคำสั่ง</h2>
+                                            <p className="text-xs text-slate-400">Mission Intelligence & Student Handbook</p>
+                                        </div>
+                                    </div>
+                                    <button 
+                                        onClick={() => setIsGuideOpen(false)}
+                                        className="text-slate-400 hover:text-white p-2 rounded-xl bg-slate-800/50 hover:bg-slate-800 border border-slate-700 transition"
+                                    >
+                                        <i data-lucide="x" className="w-5 h-5"></i>
+                                    </button>
+                                </div>
+
+                                {/* Modal Tabs */}
+                                <div className="flex border-b border-slate-800 px-6 gap-2 bg-slate-900/40">
+                                    <button 
+                                        onClick={() => setGuideTab('guide')}
+                                        className={`py-3 px-4 font-space text-sm font-semibold border-b-2 transition flex items-center gap-2 ${guideTab === 'guide' ? 'border-cyan-400 text-cyan-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
+                                    >
+                                        <i data-lucide="help-circle" className="w-4 h-4"></i> วิธีการเล่น & คอนเซปต์
+                                    </button>
+                                    <button 
+                                        onClick={() => setGuideTab('missions')}
+                                        className={`py-3 px-4 font-space text-sm font-semibold border-b-2 transition flex items-center gap-2 ${guideTab === 'missions' ? 'border-amber-400 text-amber-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
+                                    >
+                                        <i data-lucide="target" className="w-4 h-4"></i> รายละเอียดภารกิจ ({completedSectors.length}/4)
+                                    </button>
+                                    <button 
+                                        onClick={() => setGuideTab('worksheet')}
+                                        className={`py-3 px-4 font-space text-sm font-semibold border-b-2 transition flex items-center gap-2 ${guideTab === 'worksheet' ? 'border-emerald-400 text-emerald-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
+                                    >
+                                        <i data-lucide="file-text" className="w-4 h-4"></i> บันทึกสมุดอวกาศ (ใบงาน)
+                                    </button>
+                                </div>
+
+                                {/* Modal Body (Tab Content) */}
+                                <div className="p-6 overflow-y-auto space-y-6 text-sm text-slate-300 leading-relaxed">
+                                    
+                                    {/* Tab 1: Guide */}
+                                    {guideTab === 'guide' && (
+                                        <div className="space-y-5">
+                                            <div className="bg-slate-900/80 p-4 rounded-2xl border border-slate-800">
+                                                <h3 className="font-space font-bold text-cyan-400 text-base mb-2">🎯 เป้าหมายการเรียนรู้หลัก</h3>
+                                                <ul className="list-disc list-inside space-y-1.5 text-slate-300">
+                                                    <li><b>เข้าใจการบวกเศษส่วน:</b> คือการนำระยะทาง 2 ช่วงมาต่อเชื่อมกันบนเส้นจำนวน</li>
+                                                    <li><b>เข้าใจ ค.ร.น.:</b> การบวกจะทำได้เมื่อขีดสเกลเรดาร์ (ตัวส่วน) มีขนาดละเอียดเท่ากันก่อน</li>
+                                                    <li><b>เหตุผลที่ส่วนห้ามบวกกัน:</b> หากนำตัวส่วนมาบวกกัน ระยะทางที่ได้จะหดสั้นลงจนผิดความเป็นจริง</li>
+                                                </ul>
+                                            </div>
+
+                                            <div className="space-y-3">
+                                                <h3 className="font-space font-bold text-amber-400 text-base">🕹️ ขั้นตอนการปฏิบัติภารกิจ</h3>
+                                                <ol className="list-decimal list-inside space-y-2 bg-slate-900/40 p-4 rounded-2xl border border-slate-800/80">
+                                                    <li><b>วิเคราะห์สมการ:</b> ดูพิกัดเศษส่วนของ ยาน A และ ยาน B</li>
+                                                    <li><b>ทดลองทายคำตอบ:</b> ลองป้อนตัวเลขลงในช่อง Pre-simulation เพื่อตรวจเช็คความเข้าใจ</li>
+                                                    <li><b>ปรับความละเอียดเรดาร์ (x1-x6):</b> กดปรับปุ่มตัวคูณเรดาร์เพื่อหั่นขีดสเกลบนเส้นจำนวนให้เท่ากัน</li>
+                                                    <li><b>กดเดินเครื่องวาร์ป:</b> เมื่อสเกลเท่ากัน ปุ่มวาร์ปจะสว่างขึ้นเพื่อพาไปยังสถานีอวกาศ</li>
+                                                    <li><b>แปลผลพิกัด:</b> ฝึกตัดทอนเป็นเศษส่วนอย่างต่ำ และเปลี่ยนเศษเกินให้เป็นจำนวนคละ</li>
+                                                </ol>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Tab 2: Missions */}
+                                    {guideTab === 'missions' && (
+                                        <div className="space-y-4">
+                                            <p className="text-slate-400 text-xs">ความก้าวหน้าภารกิจทั้งหมดในกาแลกซี:</p>
+                                            <div className="grid grid-cols-1 gap-3">
+                                                {MISSIONS.map((m, idx) => {
+                                                    const isDone = completedSectors.includes(m.id);
+                                                    return (
+                                                        <div key={m.id} className={`p-4 rounded-2xl border transition flex items-center justify-between ${isDone ? 'bg-emerald-950/30 border-emerald-500/40' : currentMissionIdx === idx ? 'bg-cyan-950/30 border-cyan-500/40' : 'bg-slate-900/50 border-slate-800'}`}>
+                                                            <div>
+                                                                <div className="font-space font-bold text-white text-base flex items-center gap-2">
+                                                                    {m.name}
+                                                                    {isDone && <span className="bg-emerald-500/20 text-emerald-400 text-xs px-2 py-0.5 rounded-full border border-emerald-500/40">สำเร็จแล้ว 🚀</span>}
+                                                                </div>
+                                                                <p className="text-xs text-slate-400 mt-1">สมการ: {m.shipA.num}/{m.shipA.den} + {m.shipB.num}/{m.shipB.den} | จุดเรียนรู้: {m.desc}</p>
+                                                            </div>
+                                                            <button 
+                                                                onClick={() => {
+                                                                    setCurrentMissionIdx(idx);
+                                                                    setIsGuideOpen(false);
+                                                                    setMultA(1); setMultB(1); setGameState('NAVIGATION');
+                                                                }}
+                                                                className="bg-slate-800 hover:bg-slate-700 text-xs font-space font-bold px-3 py-2 rounded-xl border border-slate-700 text-slate-200 shrink-0"
+                                                            >
+                                                                เล่นด่านนี้
+                                                            </button>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Tab 3: Worksheet */}
+                                    {guideTab === 'worksheet' && (
+                                        <div className="space-y-5">
+                                            <div className="bg-emerald-950/20 border border-emerald-500/30 p-4 rounded-2xl">
+                                                <h3 className="font-space font-bold text-emerald-400 text-base mb-1">📝 บันทึกสมุดอวกาศ (Space Logbook)</h3>
+                                                <p className="text-xs text-slate-300">ให้นักเรียนใช้ทักษะการสังเกตจากการเล่นเกมเพื่อตอบคำถามวิเคราะห์ด้านล่างนี้:</p>
+                                            </div>
+
+                                            <div className="space-y-4 bg-slate-900/60 p-5 rounded-2xl border border-slate-800">
+                                                <div>
+                                                    <label className="block text-slate-200 font-semibold mb-1">
+                                                        1. ใน Sector 1 (1/2 + 1/3) สเกลเรดาร์ร่วม (ค.ร.น.) ที่ทำให้ขีดบนเส้นจำนวนเท่ากันคือเลขอะไร?
+                                                    </label>
+                                                    <input 
+                                                        type="text" 
+                                                        placeholder="พิมพ์คำตอบ (เช่น 6)" 
+                                                        value={wsLcmAns}
+                                                        onChange={e => setWsLcmAns(e.target.value)}
+                                                        className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white focus:border-emerald-400 focus:outline-none"
+                                                    />
+                                                </div>
+
+                                                <div>
+                                                    <label className="block text-slate-200 font-semibold mb-1">
+                                                        2. อธิบายสั้นๆ ว่าทำไมเราถึงนำตัวส่วน (ด้านล่าง) มาบวกกันตรงๆ ไม่ได้?
+                                                    </label>
+                                                    <textarea 
+                                                        rows="2"
+                                                        placeholder="พิมพ์อธิบายตามความคิดของนักเรียน..." 
+                                                        value={wsReasonAns}
+                                                        onChange={e => setWsReasonAns(e.target.value)}
+                                                        className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white focus:border-emerald-400 focus:outline-none"
+                                                    />
+                                                </div>
+
+                                                <button 
+                                                    onClick={checkWorksheet}
+                                                    className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-space font-bold px-5 py-2.5 rounded-xl transition active:scale-95 shadow-md"
+                                                >
+                                                    ส่งบันทึกวิเคราะห์
+                                                </button>
+
+                                                {wsFeedback && (
+                                                    <div className={`p-4 rounded-xl border text-sm mt-3 ${wsFeedback.type === 'success' ? 'bg-emerald-950/40 border-emerald-500 text-emerald-300' : wsFeedback.type === 'warning' ? 'bg-amber-950/40 border-amber-500 text-amber-300' : 'bg-rose-950/40 border-rose-500 text-rose-300'}`}>
+                                                        {wsFeedback.msg}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                </div>
+
+                                {/* Modal Footer */}
+                                <div className="p-4 border-t border-slate-800 bg-slate-900/60 flex justify-end">
+                                    <button 
+                                        onClick={() => setIsGuideOpen(false)}
+                                        className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-space text-sm px-6 py-2.5 rounded-xl border border-slate-700 transition"
+                                    >
+                                        ปิดหน้าต่าง
+                                    </button>
+                                </div>
+
+                            </div>
+                        </div>
+                    )}
+
+                    {/* กล่องแสดงสมการหลัก (Fraction Formula) */}
+                    <div className="glass-panel rounded-3xl p-6 sm:p-10 mb-8 text-center relative shadow-lg">
+                        <div className="text-sm sm:text-base font-mono text-slate-400 mb-4 uppercase tracking-widest font-semibold">
+                            คำนวณระยะทางวาร์ปรวม (Warp Vector Analysis)
+                        </div>
+
+                        <div className="flex items-center justify-center gap-6 sm:gap-12 text-4xl sm:text-6xl font-space font-bold my-4">
+                            {/* ระยะของยาน A */}
+                            <div className="flex flex-col items-center">
+                                <span style={{ color: mission.shipA.color }}>{currNumA}</span>
+                                <div className="w-16 sm:w-20 border-t-4 border-slate-600 my-2"></div>
+                                <span style={{ color: mission.shipA.color }}>{currDenA}</span>
+                            </div>
+
+                            <span className="text-slate-500 text-3xl sm:text-4xl font-light">+</span>
+
+                            {/* ระยะของยาน B */}
+                            <div className="flex flex-col items-center">
+                                <span style={{ color: mission.shipB.color }}>{currNumB}</span>
+                                <div className="w-16 sm:w-20 border-t-4 border-slate-600 my-2"></div>
+                                <span style={{ color: mission.shipB.color }}>{currDenB}</span>
+                            </div>
+
+                            {/* ผลลัพธ์เมื่อวาร์ปสำเร็จ */}
+                            {gameState === 'WARP_COMPLETE' && (
+                                <>
+                                    <span className="text-slate-500 text-3xl sm:text-4xl font-light">=</span>
+                                    <div className="flex flex-col items-center text-amber-400 animate-fade-in drop-shadow-[0_0_15px_rgba(251,191,36,0.6)]">
+                                        <span>{sumNum}</span>
+                                        <div className="w-16 sm:w-20 border-t-4 border-amber-400 my-2"></div>
+                                        <span>{sumDen}</span>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* โหมดทายคำตอบดักจับความเข้าใจผิด */}
+                    {gameState === 'NAVIGATION' && (
+                        <div className="glass-card rounded-2xl p-6 mb-8 border border-slate-700">
+                            <div className="flex items-center gap-2 text-cyan-400 font-space text-sm sm:text-base font-semibold mb-4">
+                                <i data-lucide="radar" className="w-5 h-5"></i>
+                                PRE-SIMULATION (คาดเดาผลรวมก่อนจูนเรดาร์)
+                            </div>
+                            
+                            <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
+                                <p className="text-sm sm:text-base text-slate-300">
+                                    กัปตันลองทายพิกัดดูก่อนไหมครับ? พิมพ์ตัวเลขที่คุณคิดว่าถูกต้องลงไปได้เลย:
+                                </p>
+
+                                <div className="flex items-center gap-3 shrink-0">
+                                    <div className="flex flex-col w-20">
+                                        <input 
+                                            type="number" 
+                                            placeholder="เศษ" 
+                                            value={estNum}
+                                            onChange={e => setEstNum(e.target.value)}
+                                            className="bg-slate-900 border border-slate-700 text-center font-space font-bold text-lg text-white rounded-t-xl p-2 focus:border-cyan-500 focus:outline-none"
+                                        />
+                                        <input 
+                                            type="number" 
+                                            placeholder="ส่วน" 
+                                            value={estDen}
+                                            onChange={e => setEstDen(e.target.value)}
+                                            className="bg-slate-900 border-t-0 border border-slate-700 text-center font-space font-bold text-lg text-white rounded-b-xl p-2 focus:border-cyan-500 focus:outline-none"
+                                        />
+                                    </div>
+
+                                    <button 
+                                        onClick={runDiagnostic}
+                                        className="bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 font-space font-bold text-sm sm:text-base px-6 py-5 rounded-xl transition shadow-md active:scale-95"
+                                    >
+                                        ตรวจคำตอบ
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* ข้อความแจ้งเตือนผลการทาย */}
+                            {diagLog && (
+                                <div className={`mt-5 p-4 rounded-xl text-sm sm:text-base border ${diagLog.type === 'DANGER' ? 'bg-rose-950/40 border-rose-500/50 text-rose-300' : diagLog.type === 'SUCCESS' ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300' : 'bg-slate-800/60 border-slate-700 text-slate-300'}`}>
+                                    <div className="font-space font-bold flex items-center gap-2 mb-2">
+                                        <i data-lucide={diagLog.type === 'DANGER' ? 'alert-triangle' : 'shield-check'} className="w-5 h-5"></i>
+                                        {diagLog.title}
+                                    </div>
+                                    <p className="opacity-95 leading-relaxed">{diagLog.message}</p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* เส้นจำนวนอวกาศ 1 มิติ (1D Number Line) */}
+                    <div className="glass-panel rounded-3xl p-6 sm:p-10 mb-8 relative shadow-lg border border-slate-800">
+                        <div className="flex justify-between items-center mb-8 text-sm sm:text-base">
+                            <span className="font-space text-slate-400 font-semibold">NAVIGATION NUMBER LINE (เส้นจำนวน 0 ➔ {maxLY} ปีแสง)</span>
+                            <span className="font-mono font-bold text-cyan-400 bg-cyan-950/50 px-3 py-1 rounded-md">
+                                {isMatched ? `สเกลเรดาร์ตรงกันแล้ว: 1/${currDenA} LY` : "⚠️ สเกลเรดาร์ยังไม่ตรงกัน"}
+                            </span>
+                        </div>
+
+                        {/* พื้นที่วาดเส้นจำนวน */}
+                        <div className="relative w-full h-32 my-6 flex items-center">
+                            {/* เส้นแกนหลัก */}
+                            <div className="absolute inset-x-0 h-3 bg-slate-800 rounded-full shadow-inner"></div>
+
+                            {/* วาดขีดสเกลบนเส้นจำนวน */}
+                            <div className="absolute inset-x-0 flex items-center">
+                                {/* ถ้าระยะไม่ตรงกัน ให้วาดแค่เลข 0, 1, 2 คร่าวๆ แต่ถ้าตรงกันแล้ว จะวาดขีดย่อยให้เห็นชัดเจน */}
+                                {isMatched ? (
+                                    Array.from({ length: (maxLY * currDenA) + 1 }).map((_, idx) => {
+                                        const totalTicks = maxLY * currDenA;
+                                        const leftPct = (idx / totalTicks) * 100;
+                                        const isWholeNum = idx % currDenA === 0;
+                                        const wholeValue = idx / currDenA;
+
+                                        return (
+                                            <div key={idx} className="absolute flex flex-col items-center transform -translate-x-1/2" style={{ left: `${leftPct}%` }}>
+                                                <div className={`w-0.5 ${isWholeNum ? 'h-8 bg-amber-400' : 'h-4 bg-slate-500'}`}></div>
+                                                {isWholeNum && (
+                                                    <span className="text-sm font-space font-bold text-amber-400 mt-2">{wholeValue}</span>
+                                                )}
+                                                {!isWholeNum && currDenA <= 12 && (
+                                                    <span className="text-[10px] sm:text-xs font-mono text-slate-500 mt-1">{idx}/{currDenA}</span>
+                                                )}
+                                            </div>
+                                        );
+                                    })
+                                ) : (
+                                    Array.from({ length: maxLY + 1 }).map((_, idx) => (
+                                        <div key={idx} className="absolute flex flex-col items-center transform -translate-x-1/2" style={{ left: `${(idx / maxLY) * 100}%` }}>
+                                            <div className="w-1 h-8 bg-amber-400 rounded-full"></div>
+                                            <span className="text-sm font-space font-bold text-amber-400 mt-2">{idx}</span>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+
+                            {/* เวกเตอร์ระยะทาง ยาน A */}
+                            <div 
+                                className="absolute h-10 rounded-l-xl border-y border-l border-cyan-400/80 bg-cyan-500/25 transition-all duration-500 flex items-center justify-center backdrop-blur-sm"
+                                style={{
+                                    left: '0%',
+                                    width: `${((mission.shipA.num / mission.shipA.den) / maxLY) * 100}%`
+                                }}
+                            >
+                                <span className="text-xs sm:text-sm font-space font-bold text-cyan-200 truncate px-2 drop-shadow-md">
+                                    ยาน A ({currNumA}/{currDenA})
+                                </span>
+                            </div>
+
+                            {/* เวกเตอร์ระยะทาง ยาน B (ต่อท้ายยาน A) */}
+                            <div 
+                                className="absolute h-10 rounded-r-xl border border-purple-400/80 bg-purple-500/25 transition-all duration-500 flex items-center justify-center backdrop-blur-sm shadow-[0_0_15px_rgba(168,85,247,0.2)]"
+                                style={{
+                                    left: `${((mission.shipA.num / mission.shipA.den) / maxLY) * 100}%`,
+                                    width: `${((mission.shipB.num / mission.shipB.den) / maxLY) * 100}%`
+                                }}
+                            >
+                                <span className="text-xs sm:text-sm font-space font-bold text-purple-200 truncate px-2 drop-shadow-md">
+                                    ยาน B ({currNumB}/{currDenB})
+                                </span>
+                            </div>
+
+                            {/* หมุดปลายทาง (สถานีอวกาศ) */}
+                            <div 
+                                className="absolute transform -translate-x-1/2 -top-5 animate-station z-10"
+                                style={{ left: `${(targetVal / maxLY) * 100}%` }}
+                            >
+                                <div className="bg-amber-400 text-slate-950 p-2 rounded-full shadow-lg border-2 border-amber-200">
+                                    <i data-lucide="space" className="w-5 h-5 sm:w-6 sm:h-6"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="text-center text-sm sm:text-base text-slate-300 mt-6 bg-slate-900/50 p-3 rounded-xl inline-block w-full">
+                            📍 ระยะทางรวมทั้งหมดคือ <b className="text-amber-400 text-lg">{(mission.shipA.num * mission.shipB.den + mission.shipB.num * mission.shipA.den)} / {mission.lcm} ปีแสง</b>
+                        </div>
+                    </div>
+
+                    {/* แผงควบคุมเรดาร์จูนสเกล (ส่วนที่ต้องทำส่วนให้เท่ากัน) */}
+                    {gameState !== 'WARP_COMPLETE' ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                            
+                            {/* แผงควบคุม ยาน A */}
+                            <div className="glass-card rounded-3xl p-6 border border-slate-700 shadow-md">
+                                <div className="flex items-center justify-between mb-4 border-b border-slate-700 pb-3">
+                                    <span className="font-space text-sm sm:text-base text-cyan-400 font-bold flex items-center gap-2">
+                                        <i data-lucide="settings-2" className="w-4 h-4"></i> {mission.shipA.label}
+                                    </span>
+                                    <span className="text-sm font-mono text-slate-400 bg-slate-900 px-3 py-1 rounded-md">
+                                        ค่าเริ่มต้น: {mission.shipA.num}/{mission.shipA.den}
+                                    </span>
+                                </div>
+
+                                <p className="text-sm text-slate-400 mb-3">ขยายความละเอียดเรดาร์ (x):</p>
+                                <div className="grid grid-cols-6 gap-2 mb-4">
+                                    {[1, 2, 3, 4, 5, 6].map((multiplier) => (
+                                        <button
+                                            key={multiplier}
+                                            onClick={() => setMultA(multiplier)}
+                                            className={`py-3 rounded-xl font-space text-sm font-bold transition-all shadow-sm ${multA === multiplier ? 'bg-cyan-500 text-slate-950 scale-105' : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700'}`}
+                                        >
+                                            x{multiplier}
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="text-center font-mono text-base font-bold text-cyan-300 bg-cyan-950/40 py-2 rounded-xl border border-cyan-900/50">
+                                    สเกลปัจจุบัน = {currNumA}/{currDenA} ปีแสง
+                                </div>
+                            </div>
+
+                            {/* แผงควบคุม ยาน B */}
+                            <div className="glass-card rounded-3xl p-6 border border-slate-700 shadow-md">
+                                <div className="flex items-center justify-between mb-4 border-b border-slate-700 pb-3">
+                                    <span className="font-space text-sm sm:text-base text-purple-400 font-bold flex items-center gap-2">
+                                        <i data-lucide="settings-2" className="w-4 h-4"></i> {mission.shipB.label}
+                                    </span>
+                                    <span className="text-sm font-mono text-slate-400 bg-slate-900 px-3 py-1 rounded-md">
+                                        ค่าเริ่มต้น: {mission.shipB.num}/{mission.shipB.den}
+                                    </span>
+                                </div>
+
+                                <p className="text-sm text-slate-400 mb-3">ขยายความละเอียดเรดาร์ (x):</p>
+                                <div className="grid grid-cols-6 gap-2 mb-4">
+                                    {[1, 2, 3, 4, 5, 6].map((multiplier) => (
+                                        <button
+                                            key={multiplier}
+                                            onClick={() => setMultB(multiplier)}
+                                            className={`py-3 rounded-xl font-space text-sm font-bold transition-all shadow-sm ${multB === multiplier ? 'bg-purple-500 text-white scale-105' : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700'}`}
+                                        >
+                                            x{multiplier}
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="text-center font-mono text-base font-bold text-purple-300 bg-purple-950/40 py-2 rounded-xl border border-purple-900/50">
+                                    สเกลปัจจุบัน = {currNumB}/{currDenB} ปีแสง
+                                </div>
+                            </div>
+
+                        </div>
+                    ) : (
+                        /* หน้าจอเมื่อวาร์ปสำเร็จ และส่วนของการวิเคราะห์เศษส่วนอย่างต่ำ/จำนวนคละ */
+                        <div className="glass-panel rounded-3xl p-8 sm:p-12 mb-8 text-center border-2 border-amber-500/40 animate-fade-in shadow-[0_0_30px_rgba(245,158,11,0.15)]">
+                            <div className="w-16 h-16 bg-amber-500/20 text-amber-400 rounded-full flex items-center justify-center mx-auto mb-5 border border-amber-500/40">
+                                <i data-lucide="rocket" className="w-8 h-8"></i>
+                            </div>
+                            <h2 className="font-space text-2xl sm:text-3xl font-bold text-amber-400 mb-4">วาร์ปสำเร็จ! พิกัดลงล็อกสมบูรณ์</h2>
+                            
+                            <p className="text-slate-200 text-base sm:text-lg max-w-2xl mx-auto mb-8 leading-relaxed">
+                                เมื่อสเกลเรดาร์มีขนาดเท่ากัน (ช่องละ 1/{currDenA}) เราสามารถนำระยะทางด้านบน (ตัวเศษ) มารวมกันได้เลย!<br/>
+                                ได้ระยะวาร์ปรวมเท่ากับ <span className="bg-amber-950/50 px-3 py-1 rounded text-amber-300 font-bold">{sumNum} / {sumDen} ปีแสง</span>
+                            </p>
+
+                            {/* ระบบย่อสเกล (แปลงเป็นเศษส่วนอย่างต่ำ / จำนวนคละ) */}
+                            {needsOptimization && (
+                                <div className="bg-slate-900/80 border border-slate-700 rounded-2xl p-6 max-w-2xl mx-auto mb-8 text-left">
+                                    {!showSimplify ? (
+                                        <button 
+                                            onClick={() => setShowSimplify(true)}
+                                            className="w-full bg-slate-800 hover:bg-slate-700 text-cyan-400 font-space font-bold py-4 rounded-xl border border-cyan-900 transition flex items-center justify-center gap-3"
+                                        >
+                                            <i data-lucide="microscope" className="w-5 h-5"></i>
+                                            แปลผลพิกัดให้ง่ายขึ้น (ทำเป็นเศษส่วนอย่างต่ำ / จำนวนคละ)
+                                        </button>
+                                    ) : (
+                                        <div className="animate-fade-in space-y-4">
+                                            <h3 className="text-cyan-400 font-bold text-lg border-b border-slate-700 pb-2 flex items-center gap-2">
+                                                <i data-lucide="check-circle-2" className="w-5 h-5"></i> ขั้นตอนปรับปรุงพิกัด
+                                            </h3>
+                                            
+                                            {isSimplifiable && (
+                                                <div className="flex items-center gap-4 text-slate-300 text-sm sm:text-base">
+                                                    <span className="bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">พิกัดเดิม: <b className="text-white">{sumNum}/{sumDen}</b></span>
+                                                    <i data-lucide="arrow-right" className="w-4 h-4 text-slate-500"></i>
+                                                    <span>หารด้วย {commonDivisor} ทั้งเศษและส่วน</span>
+                                                    <i data-lucide="arrow-right" className="w-4 h-4 text-slate-500"></i>
+                                                    <span className="bg-cyan-950 px-3 py-1.5 rounded-lg border border-cyan-800 text-cyan-300 font-bold">เศษส่วนอย่างต่ำ: {simpNum}/{simpDen}</span>
+                                                </div>
+                                            )}
+
+                                            {isImproper && (
+                                                <div className="flex items-center gap-4 text-slate-300 text-sm sm:text-base mt-3 bg-amber-950/30 p-4 rounded-xl border border-amber-900/50">
+                                                    <div>
+                                                        <span className="block text-amber-300 mb-1"><i data-lucide="info" className="w-4 h-4 inline mr-1"></i> เนื่องจากระยะทางวาร์ปเกิน 1 ปีแสง!</span>
+                                                        <span>เราสามารถแปลงเศษเกิน <b className="text-white">{simpNum}/{simpDen}</b> ให้เป็นจำนวนคละได้</span>
+                                                    </div>
+                                                    <i data-lucide="arrow-right" className="w-5 h-5 text-amber-500 shrink-0"></i>
+                                                    <div className="bg-amber-900/40 px-4 py-3 rounded-xl border border-amber-700 text-center shrink-0">
+                                                        <span className="block text-xs text-amber-300/80 mb-1">ระยะทางที่เข้าใจง่ายที่สุด</span>
+                                                        {remNum === 0 ? (
+                                                            <span className="text-2xl font-bold text-amber-400">{wholeNum} ปีแสง</span>
+                                                        ) : (
+                                                            <span className="text-2xl font-bold text-amber-400">{wholeNum} <span className="text-lg">{remNum}/{simpDen}</span></span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            <button 
+                                onClick={nextMission}
+                                className="bg-amber-400 hover:bg-amber-300 text-slate-950 font-space font-bold text-sm sm:text-lg px-8 py-4 rounded-xl transition shadow-lg active:scale-95"
+                            >
+                                NEXT MISSION SECTOR 🛸
+                            </button>
+                        </div>
+                    )}
+
+                    {/* ปุ่มกดเมื่อส่วนเท่ากันเพื่อเริ่มวาร์ป */}
+                    {isMatched && gameState === 'RADAR_LOCKED' && (
+                        <div className="text-center animate-bounce">
+                            <button 
+                                onClick={initiateWarp}
+                                className="bg-amber-400 hover:bg-amber-300 text-slate-950 font-space font-bold text-base sm:text-xl px-10 py-5 rounded-2xl transition shadow-[0_0_20px_rgba(251,191,36,0.4)] active:scale-95 flex items-center justify-center gap-3 mx-auto border-2 border-amber-200"
+                            >
+                                <i data-lucide="zap" className="w-6 h-6 fill-current"></i>
+                                สเกลพร้อมแล้ว! เดินเครื่องวาร์ปมิติ
+                            </button>
+                        </div>
+                    )}
+
+                </div>
+            );
+        };
+
+        const rootElement = document.getElementById('root');
+        const root = ReactDOM.createRoot(rootElement);
+        root.render(<App />);
+    </script>
+</body>
+</html>
